@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPU 推薦助手 — 找到最佳 CP 值顯示卡</title>
+  <meta name="description" content="智能顯示卡推薦系統，依您的預算或目標顯卡，即時查詢 CP 值最高的選擇。">
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-inner">
+    <a href="/" class="logo">
+      <div class="logo-icon">🎮</div>
+      <span class="logo-text">GPU 推薦助手</span>
+    </a>
+    
+    <div class="db-status-bar">
+      <div class="db-status-info" id="db-status-info">
+        <div class="db-status-dot {% if not db_meta.latest_date %}empty{% endif %}" id="db-status-dot"></div>
+        <span id="db-status-text">
+          {% if db_meta.latest_date %}
+            共 {{ db_meta.count }} 筆｜{{ db_meta.latest_date }}
+          {% else %}
+            尚無資料
+          {% endif %}
+        </span>
+      </div>
+      <button class="btn-update" id="btn-update-db" onclick="updateDatabase()">
+        <span id="update-icon">↻</span>
+        <span id="update-text">更新資料庫</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Main Content -->
+<div class="main-container">
+  
+  <!-- Chat Panel -->
+  <div class="chat-panel">
+    
+    <!-- Messages Area -->
+    <div class="chat-messages" id="chat-messages">
+      
+      <!-- Welcome Message -->
+      <div class="welcome-msg" id="welcome-msg">
+        <div class="welcome-icon">🖥️</div>
+        <h1 class="welcome-title">找到最適合您的顯示卡</h1>
+        <p class="welcome-subtitle">
+          告訴我您的預算，或指定想比較的目標顯示卡，<br>
+          我會從最新資料中幫您找出 CP 值最高的選擇！
+        </p>
+        <div class="quick-prompts">
+          <button class="quick-prompt" onclick="sendQuickPrompt('預算 15000 元推薦顯卡')">💰 預算 15,000</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('預算 10000 元有哪些選擇')">💰 預算 10,000</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('預算 30000 元推薦高階顯卡')">💰 預算 30,000</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('RTX 4070 同價位有哪些更值得的選擇')">🎯 比較 RTX 4070</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('RX 7800 XT 附近有什麼好選擇')">🎯 比較 RX 7800 XT</button>
+        </div>
+      </div>
+      
+    </div>
+    
+    <!-- Input Area -->
+    <div class="chat-input-area">
+      <form class="chat-input-form" onsubmit="sendMessage(event)">
+        <textarea
+          class="chat-input"
+          id="chat-input"
+          placeholder="輸入您的預算（例：預算 15000）或目標顯卡型號..."
+          rows="1"
+          onkeydown="handleKeyDown(event)"
+          oninput="autoResize(this)"
+        ></textarea>
+        <button type="submit" class="btn-send" id="btn-send" title="送出">
+          <span id="send-icon">↑</span>
+        </button>
+      </form>
+    </div>
+    
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script src="{% static 'js/app.js' %}"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# ─── Python ───────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ─── 虛擬環境 ─────────────────────────────────────────
+env/
+venv/
+.venv/
+ENV/
+
+# ─── Django ───────────────────────────────────────────
+*.log
+local_settings.py
+db.sqlite3
+media/
+
+# ─── 資料庫（含 GPU 資料，體積大且為本地資料）────────
+filtered_df.db
+
+# ─── 環境變數 / 機密設定 ─────────────────────────────
+.env
+.env.*
+secrets.py
+
+# ─── 測試 / 覆蓋率 ───────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ─── IDE / 編輯器 ────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS 產生的檔案 ───────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Selenium / 爬蟲暫存 ─────────────────────────────
+*.csv
+chromedriver*
+geckodriver*
+
+# ─── Jupyter Notebook checkpoint ─────────────────────
+.ipynb_checkpoints/
