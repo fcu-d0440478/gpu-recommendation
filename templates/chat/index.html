@@ -37,6 +37,34 @@
   </div>
 </header>
 
+{% if not db_meta.db_ready %}
+<!-- DB 未就緒警告橫幅 -->
+<div id="db-init-banner" style="
+  background: linear-gradient(135deg, rgba(251,146,60,0.15), rgba(249,115,22,0.1));
+  border-bottom: 1px solid rgba(249,115,22,0.3);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  color: #fdba74;
+">
+  <span>⚠️</span>
+  <span>資料庫尚未建立，請點擊右上角「<strong>更新資料庫</strong>」按鈕來爬取最新 GPU 資料（約需 2–5 分鐘）。</span>
+  <button onclick="updateDatabase()" style="
+    background: linear-gradient(135deg, #f97316, #fb923c);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+  ">立即更新</button>
+</div>
+{% endif %}
+
 <!-- Main Content -->
 <div class="main-container">
   
@@ -54,13 +82,19 @@
           告訴我您的預算，或指定想比較的目標顯示卡，<br>
           我會從最新資料中幫您找出 CP 值最高的選擇！
         </p>
+        {% if db_meta.db_ready %}
         <div class="quick-prompts">
           <button class="quick-prompt" onclick="sendQuickPrompt('預算 15000 元推薦顯卡')">💰 預算 15,000</button>
           <button class="quick-prompt" onclick="sendQuickPrompt('預算 10000 元有哪些選擇')">💰 預算 10,000</button>
           <button class="quick-prompt" onclick="sendQuickPrompt('預算 30000 元推薦高階顯卡')">💰 預算 30,000</button>
-          <button class="quick-prompt" onclick="sendQuickPrompt('RTX 4070 同價位有哪些更值得的選擇')">🎯 比較 RTX 4070</button>
-          <button class="quick-prompt" onclick="sendQuickPrompt('RX 7800 XT 附近有什麼好選擇')">🎯 比較 RX 7800 XT</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('RTX 5060 同價位有哪些更值得的選擇')">🎯 比較 RTX 5060</button>
+          <button class="quick-prompt" onclick="sendQuickPrompt('RX 9070 XT 附近有什麼好選擇')">🎯 比較 RX 9070 XT</button>
         </div>
+        {% else %}
+        <div style="margin-top: 16px; color: rgba(253,186,116,0.8); font-size: 14px;">
+          ⚠️ 請先更新資料庫才能使用推薦功能
+        </div>
+        {% endif %}
       </div>
       
     </div>
@@ -71,12 +105,14 @@
         <textarea
           class="chat-input"
           id="chat-input"
-          placeholder="輸入您的預算（例：預算 15000）或目標顯卡型號..."
+          placeholder="{% if db_meta.db_ready %}輸入您的預算（例：預算 15000）或目標顯卡型號...{% else %}請先更新資料庫才能使用推薦功能{% endif %}"
           rows="1"
           onkeydown="handleKeyDown(event)"
           oninput="autoResize(this)"
+          {% if not db_meta.db_ready %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}
         ></textarea>
-        <button type="submit" class="btn-send" id="btn-send" title="送出">
+        <button type="submit" class="btn-send" id="btn-send" title="送出"
+          {% if not db_meta.db_ready %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}>
           <span id="send-icon">↑</span>
         </button>
       </form>

@@ -149,7 +149,7 @@ def api_chat(request):
     # 若無預算也無目標卡，直接回傳固定提示（不呼叫 LLM 避免模型亂問）
     if budget is None and target_gpu is None:
         return JsonResponse({
-            "assistant_message": "請告訴我您的預算（例如：預算 15000 元）或目標顯卡型號（例如：RTX 4070），我會立即從最新資料庫查詢 CP 值最高的 Top 3 推薦！",
+            "assistant_message": "請告訴我您的預算（例如：預算 15000 元）或目標顯卡型號（例如：RTX 5060），我會立即從最新資料庫查詢 CP 值最高的 Top 3 推薦！",
             "recommendations": [],
             "base_price": None,
             "window_used_pct": None,

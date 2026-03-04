@@ -29,6 +29,21 @@ def _get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _db_ready() -> bool:
+    """檢查 filtered_df 資料表是否存在（初始化用）"""
+    try:
+        conn = _get_connection()
+        try:
+            conn.execute("SELECT 1 FROM filtered_df LIMIT 1")
+            return True
+        except sqlite3.OperationalError:
+            return False
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
 def skill_get_gpu_recommendations(
     budget_twd: int | None,
     target_gpu: str | None,
@@ -48,7 +63,10 @@ def skill_get_gpu_recommendations(
         cursor = conn.cursor()
 
         # 取得最新日期
-        cursor.execute("SELECT MAX(date) FROM filtered_df")
+        try:
+            cursor.execute("SELECT MAX(date) FROM filtered_df")
+        except sqlite3.OperationalError:
+            return {"error": "資料庫尚未建立，請先點擊右上角「更新資料庫」按鈕"}
         row = cursor.fetchone()
         latest_date = row[0] if row else None
         if not latest_date:
@@ -122,7 +140,10 @@ def skill_search_gpu_candidates(query: str) -> list:
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(date) FROM filtered_df")
+        try:
+            cursor.execute("SELECT MAX(date) FROM filtered_df")
+        except sqlite3.OperationalError:
+            return []
         row = cursor.fetchone()
         latest_date = row[0] if row else None
         if not latest_date:
@@ -147,10 +168,16 @@ def skill_search_gpu_candidates(query: str) -> list:
 
 def skill_get_db_meta() -> dict:
     """回傳最後更新日期、來源、最新 date 中的顯示卡筆數"""
-    conn = _get_connection()
+    try:
+        conn = _get_connection()
+    except Exception:
+        return {"latest_date": None, "count": 0, "source": "CoolPC + UL Benchmark", "db_ready": False}
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(date) FROM filtered_df")
+        try:
+            cursor.execute("SELECT MAX(date) FROM filtered_df")
+        except sqlite3.OperationalError:
+            return {"latest_date": None, "count": 0, "source": "CoolPC + UL Benchmark", "db_ready": False}
         row = cursor.fetchone()
         latest_date = row[0] if row else None
 
@@ -165,6 +192,7 @@ def skill_get_db_meta() -> dict:
             "latest_date": latest_date,
             "count": count,
             "source": "CoolPC + UL Benchmark",
+            "db_ready": latest_date is not None,
         }
     finally:
         conn.close()

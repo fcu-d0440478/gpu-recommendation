@@ -228,8 +228,9 @@ async function updateDatabase(force = false) {
 
     if (data.status === 'success') {
       showToast('success', `✅ ${data.message || '資料庫更新成功！'}`);
-      // 重新取得 DB meta
+      // 重新取得 DB meta，首次建立時解鎖 UI
       await refreshDbMeta();
+      onDbBecameReady();
     } else if (data.status === 'skipped') {
       showToast('info', `ℹ️ ${data.reason}`);
     } else {
@@ -271,6 +272,32 @@ function updateDbStatusDisplay(date) {
     if (!current.includes(date)) {
       // 保持現有筆數，只更新日期標記
     }
+  }
+}
+
+function onDbBecameReady() {
+  // 移除 DB 未就緒的橘色橫幅
+  const banner = document.getElementById('db-init-banner');
+  if (banner) banner.remove();
+
+  // 解除輸入框 disabled
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('btn-send');
+  if (input && input.disabled) {
+    input.disabled = false;
+    input.style.opacity = '';
+    input.style.cursor = '';
+    input.placeholder = '輸入您的預算（例：預算 15000）或目標顯卡型號...';
+  }
+  if (sendBtn && sendBtn.disabled) {
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = '';
+    sendBtn.style.cursor = '';
+  }
+
+  // 重新載入頁面讓快速提示按鈕出現（簡單可靠）
+  if (!document.querySelector('.quick-prompts')) {
+    window.location.reload();
   }
 }
 
