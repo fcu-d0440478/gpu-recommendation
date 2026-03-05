@@ -35,65 +35,143 @@ SYSTEM_PROMPT = """你是一個專業的顯示卡推薦助手。
 CP 值 = UL TimeSpy 跑分 / 台幣售價，CP 值越高代表同預算效能越好。"""
 
 
+import re
+
+_ZH_DIGIT = {
+    "零": 0, "〇": 0,
+    "一": 1, "二": 2, "兩": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_ZH_UNIT = {"十": 10, "百": 100, "千": 1000, "萬": 10000}
+
+def _parse_zh_int_upto_9999(s: str) -> int | None:
+    if not s:
+        return None
+
+    total = 0
+    num = None
+    unit_seen = False
+
+    for ch in s:
+        if ch in _ZH_DIGIT:
+            num = _ZH_DIGIT[ch]
+        elif ch in _ZH_UNIT and ch != "萬":
+            unit_seen = True
+            unit = _ZH_UNIT[ch]
+            if num is None:
+                num = 1
+            total += num * unit
+            num = None
+        else:
+            return None
+
+    if num is not None:
+        total += num
+
+    return total if (total > 0 or unit_seen or num == 0) else None
+
+def parse_zh_amount(text: str) -> int | None:
+    t = text.strip().replace(",", "").replace(" ", "")
+    if not t:
+        return None
+
+    m = re.fullmatch(r"\d+", t)
+    if m:
+        return int(t)
+
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*萬", t)
+    if m:
+        return int(float(m.group(1)) * 10000)
+
+    m = re.fullmatch(r"(\d+)\s*萬\s*(\d+)?\s*(千)?", t)
+    if m:
+        wan = int(m.group(1)) * 10000
+        tail = m.group(2)
+        has_qian = m.group(3) is not None
+        if not tail:
+            return wan + (1000 if has_qian else 0)
+        tail_num = int(tail)
+        if has_qian:
+            return wan + tail_num * 1000
+        if len(tail) == 1:
+            return wan + tail_num * 1000
+        if len(tail) >= 3:
+            return wan + tail_num
+        return wan + tail_num * 100
+
+    if "萬" in t:
+        parts = t.split("萬", 1)
+        left = parts[0]
+        right = parts[1].strip()
+        
+        left_val = _parse_zh_int_upto_9999(left)
+        if left_val is None:
+            return None
+        base = left_val * 10000
+
+        if not right:
+            return base
+
+        right_val = _parse_zh_int_upto_9999(right.replace("千", "千"))
+        if right_val is not None:
+            if right_val < 10 and ("千" not in right) and ("百" not in right) and ("十" not in right):
+                return base + right_val * 1000
+            return base + right_val
+
+        m2 = re.fullmatch(r"(\d+)", right)
+        if m2:
+            tail_num = int(m2.group(1))
+            if len(m2.group(1)) == 1:
+                return base + tail_num * 1000
+            return base + tail_num
+        return None
+
+    val = _parse_zh_int_upto_9999(t)
+    if val is not None:
+        return val
+
+    return None
+
 def _extract_intent(message: str) -> dict:
     """
     從使用者訊息中提取意圖：預算或目標顯卡。
     使用規則提取，不呼叫 LLM。
     """
-    import re
-
     budget = None
+    target_gpu = None
 
     # 先找 GPU 型號（需優先偵測，避免型號中的數字被誤判為預算）
-    target_gpu = None
     gpu_keywords = [
-        r"RTX\s*\d+[A-Za-z0-9]*",
-        r"RX\s*\d+[A-Za-z0-9]*",
-        r"Arc\s*[AB]\d+[A-Za-z0-9]*",
-        r"GTX\s*\d+[A-Za-z0-9]*",
+        r"(?<![a-zA-Z])RTX\s*\d+[A-Za-z0-9]*(?:\s+(?:Ti|SUPER|XT|XTX|GRE))?(?:\s+SUPER)?",
+        r"(?<![a-zA-Z])RX\s*\d+[A-Za-z0-9]*(?:\s+(?:Ti|SUPER|XT|XTX|GRE))?(?:\s+SUPER)?",
+        r"(?<![a-zA-Z])Arc\s*[AB]\d+[A-Za-z0-9]*",
+        r"(?<![a-zA-Z])GTX\s*\d+[A-Za-z0-9]*(?:\s+(?:Ti|SUPER|XT|XTX|GRE))?(?:\s+SUPER)?",
     ]
-    gpu_match_span = None  # 記錄 GPU 型號在字串中的位置，之後排除這段數字
+    gpu_match_span = None
     for pattern in gpu_keywords:
         match = re.search(pattern, message, re.IGNORECASE)
         if match:
             target_gpu = match.group(0).strip()
-            gpu_match_span = match.span()  # (start, end)
+            gpu_match_span = match.span()
             break
 
-    # 提取預算：需排除 GPU 型號所在的子字串
     search_text = message
     if gpu_match_span:
-        # 用空格替換 GPU 型號，避免其中的數字被當預算
         start, end = gpu_match_span
         search_text = message[:start] + ' ' * (end - start) + message[end:]
 
-    # 先嘗試帶千位分隔符的格式（15,000）
-    match = re.search(r"\b(\d{1,3}(?:,\d{3})+)\s*(?:元|塊|台幣|twd)?\b", search_text, re.IGNORECASE)
-    if match:
-        num_str = match.group(1).replace(",", "")
-        num = int(num_str)
-        if 3000 <= num <= 300000:
-            budget = num
-
-    # 再嘗試純數字格式（用 \b 確保匹配完整數字）
-    if not budget:
-        for m in re.finditer(r"\b(\d+)\b", search_text):
-            num = int(m.group(1))
-            if 3000 <= num <= 300000:
-                budget = num
-                break
-
-    # 萬元格式（1萬5、1.5萬）
-    if not budget:
-        match = re.search(r"(\d+(?:\.\d+)?)\s*萬\s*(\d*)", search_text)
-        if match:
-            wan = float(match.group(1))
-            extra = int(match.group(2)) * 1000 if match.group(2) else 0
-            budget = int(wan * 10000) + extra
+    # 抓取包含「數字/中文數字」等片段丟給 parser 處理
+    cand_matches = re.finditer(r"([零〇一二兩三四五六七八九十百千萬\d\.,\s]{1,15})(?:元|塊|台幣|twd|左右|以內|內)?", search_text, re.IGNORECASE)
+    for cand in cand_matches:
+        amt = parse_zh_amount(cand.group(1))
+        # 通常合理預算在 3000 ~ 300000 之間
+        if amt and 3000 <= amt <= 300000:
+            budget = amt
+            break
 
     # 判斷是否為更新資料庫的意圖
-    update_keywords = ["更新", "刷新", "同步", "爬取", "update"]
-    is_update = any(kw in message.lower() for kw in update_keywords)
+    update_keywords = ["更新", "刷新", "同步", "爬取"]
+    is_update = bool(re.search(r"\bupdate\b|\brefresh\b", message, re.IGNORECASE)) or any(kw in message for kw in update_keywords)
 
     return {
         "budget": budget,
@@ -197,8 +275,14 @@ def api_chat(request):
 
     # 若無推薦資料，直接回傳不呼叫 LLM
     if not recommendations:
+        is_compare_mode = (target_gpu is not None)
+        if is_compare_mode:
+            assistant_msg = f"抱歉，資料庫中目前找不到與 {target_gpu} 價格（${base_price:,}）相近且效能相當的替代顯示卡。這可能是因為該型號在這價位帶已經沒有更具 CP 值的競爭對手，或者資料庫缺少相關報價。建議您嘗試比較其他型號，或更新資料庫。"
+        else:
+            assistant_msg = f"抱歉，資料庫中目前找不到價格在 ${base_price:,} 元附近範圍內的顯示卡。建議調整預算範圍或重新更新資料庫。"
+            
         return JsonResponse({
-            "assistant_message": f"抱歉，資料庫中目前找不到價格在 ${base_price:,} 元 ±{window_pct}% 範圍內的顯示卡。建議調整預算範圍或重新更新資料庫。",
+            "assistant_message": assistant_msg,
             "recommendations": [],
             "base_price": base_price,
             "window_used_pct": window_pct,

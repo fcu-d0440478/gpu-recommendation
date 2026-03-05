@@ -214,7 +214,8 @@ def llm_map_chipsets(unknown_chipsets: list[str], ul_gpu_names: list[str]) -> di
         return validated
     except Exception as e:
         logger.error(f"LLM Mapping 失敗：{e}")
-        return {c: None for c in unknown_chipsets}
+        # 發生錯誤時回傳空字典，不要存死 null，讓下次再試
+        return {}
 
 
 def clean_and_calculate_cp(coolpc_data: list[dict], mapping: dict, ul_df: pd.DataFrame) -> pd.DataFrame:

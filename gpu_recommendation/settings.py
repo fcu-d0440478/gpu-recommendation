@@ -75,7 +75,7 @@ DATABASES = {
 GPU_DB_PATH = BASE_DIR / 'filtered_df.db'
 
 # Mapping JSON 路徑
-GPU_MAPPING_JSON_PATH = BASE_DIR / 'Web Crawling and Data Cleaning' / '3 gpu_mapping_checklist.json'
+GPU_MAPPING_JSON_PATH = BASE_DIR / 'gpu_mapping_checklist.json'
 
 # Ollama 設定
 OLLAMA_API_URL = 'http://localhost:11434/api/generate'

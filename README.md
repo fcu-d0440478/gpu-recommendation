@@ -112,16 +112,11 @@ gpu-recommendation/
 ├── templates/chat/index.html    # 聊天介面
 ├── static/
 │   ├── css/style.css           # 暗色主題設計
-│   └── js/app.js               # 前端互動邏輯
 │
 ├── tests/
 │   └── test_skills.py          # pytest 單元測試
 │
-├── Web Crawling and Data Cleaning/    # 爬蟲腳本（ETL 參考）
-│   ├── 1 wayback_vga_tracker.py      # CoolPC 爬蟲
-│   ├── 2 gpu_scraper_ul.py           # UL Benchmark 爬蟲
-│   └── 3 gpu_mapping_checklist.json  # GPU 名稱對照快取
-│
+├── gpu_mapping_checklist.json   # GPU 名稱對照快取
 ├── filtered_df.db               # SQLite 資料庫（GPU 價格 + 跑分）
 └── requirements.txt
 ```

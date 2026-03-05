@@ -72,8 +72,9 @@ def skill_get_gpu_recommendations(
         if not latest_date:
             return {"error": "資料庫目前沒有資料，請先更新資料庫"}
 
-        # 決定基準價格
+        # 決定基準價格與跑分
         base_price = budget_twd
+        base_score = 0  # 預算模式下，我們先找到基準預算內 CP 最高的卡來做效能基準
         target_gpu_info = None       # 目標卡代表資訊
         exclude_pure_chipset = None  # 比較模式：排除目標卡整個型號
 
@@ -85,6 +86,7 @@ def skill_get_gpu_recommendations(
             # 取 CP 最高的那筆作為代表
             best_match = candidates[0]
             base_price = best_match["price"]
+            base_score = best_match["score"]
             target_gpu_info = best_match
             # 排除整個 pure_chipset（避免同型號不同品牌的卡佔滿替代方案）
             exclude_pure_chipset = best_match.get("pure_chipset")
@@ -92,41 +94,51 @@ def skill_get_gpu_recommendations(
         if base_price is None:
             return {"error": "無法確定基準價格"}
 
-        # 逐步放寬價格區間
-        window_pct = price_window_pct
-        results = []
-        while window_pct <= 0.30:
-            low = int(base_price * (1 - window_pct))
-            high = int(base_price * (1 + window_pct))
+        # 若是純預算模式，先估算該預算原本能買到的「基準效能」
+        if target_gpu is None:
+            cursor.execute(
+                """
+                SELECT MAX(score) FROM filtered_df
+                WHERE date = ? AND price BETWEEN ? AND ?
+                """,
+                [latest_date, int(base_price * 0.9), int(base_price * 1.1)]
+            )
+            row = cursor.fetchone()
+            base_score = row[0] if row and row[0] else 0
 
-            sql = """
-                SELECT date, chipset, product, price, pure_chipset, score, CP
-                FROM filtered_df
-                WHERE date = ?
-                  AND price BETWEEN ? AND ?
-            """
-            params = [latest_date, low, high]
+        # 將效能底線設為基準效能的 95 折 (打 95 折，容許微小效能妥協換取巨大價差)
+        min_score = int(base_score * 0.95)
 
-            if exclude_pure_chipset:
-                sql += " AND pure_chipset != ?"
-                params.append(exclude_pure_chipset)
+        # 直接套用不對稱區間：向下深挖至 30%，向上放寬 15%
+        low = int(base_price * 0.70)
+        high = int(base_price * 1.15)
+        window_used_pct = 15
 
-            sql += " ORDER BY CP DESC LIMIT ?"
-            params.append(top_k)
+        sql = """
+            SELECT date, chipset, product, price, pure_chipset, score, CP
+            FROM filtered_df
+            WHERE date = ?
+                AND price BETWEEN ? AND ?
+                AND score >= ?
+        """
+        params = [latest_date, low, high, min_score]
 
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
-            results = [dict(r) for r in rows]
+        if exclude_pure_chipset:
+            sql += " AND pure_chipset != ?"
+            params.append(exclude_pure_chipset)
 
-            if len(results) >= top_k:
-                break
-            window_pct += 0.05
+        sql += " ORDER BY CP DESC LIMIT ?"
+        params.append(top_k)
+
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        results = [dict(r) for r in rows]
 
         return {
             "recommendations": results,
             "target_gpu_info": target_gpu_info,   # 比較模式：目標卡代表資訊
             "base_price": base_price,
-            "window_used_pct": round(window_pct * 100),
+            "window_used_pct": window_used_pct,
             "latest_date": latest_date,
             "count": len(results),
         }
