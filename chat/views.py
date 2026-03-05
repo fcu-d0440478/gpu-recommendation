@@ -3,6 +3,7 @@ API Views：
 - POST /api/chat — 接收訊息，呼叫 skill + Ollama，回傳推薦
 - POST /api/update-db — 觸發 ETL 更新
 - GET  /api/db-meta — 回傳 DB 狀態資訊
+- GET  /api/db-browse — 瀏覽最新日期資料（支援搜尋、排序）
 - GET  / — 主頁面（聊天 UI）
 """
 import json
@@ -46,10 +47,10 @@ def _extract_intent(message: str) -> dict:
     # 先找 GPU 型號（需優先偵測，避免型號中的數字被誤判為預算）
     target_gpu = None
     gpu_keywords = [
-        r"RTX\s*\d+\w*",
-        r"RX\s*\d+\w*",
-        r"Arc\s*[AB]\d+",
-        r"GTX\s*\d+\w*",
+        r"RTX\s*\d+[A-Za-z0-9]*",
+        r"RX\s*\d+[A-Za-z0-9]*",
+        r"Arc\s*[AB]\d+[A-Za-z0-9]*",
+        r"GTX\s*\d+[A-Za-z0-9]*",
     ]
     gpu_match_span = None  # 記錄 GPU 型號在字串中的位置，之後排除這段數字
     for pattern in gpu_keywords:
@@ -313,3 +314,130 @@ def api_db_meta(request):
     """
     meta = skill_get_db_meta()
     return JsonResponse(meta)
+
+
+@require_http_methods(["GET"])
+def api_db_browse(request):
+    """
+    GET /api/db-browse
+    回傳最新日期的顯示卡資料，支援搜尋、排序、價格範圍過濾與分頁。
+    Query params:
+      - search     : 關鍵字，比對 product / pure_chipset（可選）
+      - sort       : 排序欄位，合法值 price|score|CP|chipset|product|pure_chipset，預設 CP
+      - order      : asc|desc，預設 desc
+      - price_min  : 最低售價（整數，可選）
+      - price_max  : 最高售價（整數，可選）
+      - page       : 頁碼（從 1 開始），預設 1
+      - page_size  : 每頁筆數，固定 50
+    """
+    import sqlite3
+    from django.conf import settings as django_settings
+
+    PAGE_SIZE = 50
+
+    # ── 白名單防 SQL Injection（含文字欄位）──
+    ALLOWED_SORT = {"price", "score", "CP", "chipset", "product", "pure_chipset"}
+    sort_col = request.GET.get("sort", "CP")
+    if sort_col not in ALLOWED_SORT:
+        sort_col = "CP"
+
+    order = request.GET.get("order", "desc").lower()
+    if order not in ("asc", "desc"):
+        order = "desc"
+
+    search = request.GET.get("search", "").strip()
+
+    # 價格範圍
+    def _to_int(val):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return None
+
+    price_min = _to_int(request.GET.get("price_min"))
+    price_max = _to_int(request.GET.get("price_max"))
+
+    # 分頁
+    page = max(1, _to_int(request.GET.get("page")) or 1)
+
+    db_path = str(django_settings.GPU_DB_PATH)
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # 取最新日期
+        cursor.execute("SELECT MAX(date) FROM filtered_df")
+        row = cursor.fetchone()
+        latest_date = row[0] if row else None
+
+        if not latest_date:
+            return JsonResponse({
+                "rows": [], "total": 0, "total_pages": 0,
+                "page": 1, "page_size": PAGE_SIZE, "latest_date": None,
+            })
+
+        # 建立查詢（欄位名稱已白名單化，直接嵌入）
+        base_sql = (
+            "SELECT date, chipset, product, price, pure_chipset, score, CP "
+            "FROM filtered_df "
+            "WHERE date = ? "
+        )
+        params = [latest_date]
+
+        if search:
+            base_sql += "AND (product LIKE ? OR pure_chipset LIKE ?) "
+            like = f"%{search}%"
+            params += [like, like]
+
+        if price_min is not None:
+            base_sql += "AND price >= ? "
+            params.append(price_min)
+
+        if price_max is not None:
+            base_sql += "AND price <= ? "
+            params.append(price_max)
+
+        # 文字欄位排序加 COLLATE NOCASE，數值欄位直接排序
+        if sort_col in ("chipset", "product", "pure_chipset"):
+            base_sql += f"ORDER BY {sort_col} COLLATE NOCASE {order.upper()}"
+        else:
+            base_sql += f"ORDER BY {sort_col} {order.upper()}"
+
+        cursor.execute(base_sql, params)
+        rows_raw = cursor.fetchall()
+        conn.close()
+
+        all_rows = [
+            {
+                "date": r["date"],
+                "chipset": r["chipset"],
+                "product": r["product"],
+                "price": r["price"],
+                "pure_chipset": r["pure_chipset"],
+                "score": r["score"],
+                "CP": round(r["CP"], 4) if r["CP"] is not None else None,
+            }
+            for r in rows_raw
+        ]
+
+        total = len(all_rows)
+        import math
+        total_pages = max(1, math.ceil(total / PAGE_SIZE))
+        page = min(page, total_pages)
+
+        start = (page - 1) * PAGE_SIZE
+        rows = all_rows[start: start + PAGE_SIZE]
+
+        return JsonResponse({
+            "rows": rows,
+            "total": total,
+            "total_pages": total_pages,
+            "page": page,
+            "page_size": PAGE_SIZE,
+            "latest_date": latest_date,
+        })
+
+    except Exception as e:
+        logger.error(f"DB 瀏覽查詢失敗：{e}")
+        return JsonResponse({"error": str(e)}, status=500)

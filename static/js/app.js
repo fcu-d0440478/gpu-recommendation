@@ -332,4 +332,200 @@ document.addEventListener('DOMContentLoaded', () => {
   chatInput.focus();
   // 定期更新 DB 狀態
   setInterval(refreshDbMeta, 60000);
+
+  // DB 瀏覽初始化
+  loadDbBrowse();
+  attachDbBrowseEvents();
 });
+
+
+// ===== DB 瀏覽 =====
+
+// 文字欄位預設升序，數值欄位預設降序
+const DB_SORT_DEFAULT_ORDER = {
+  chipset: 'asc', product: 'asc', pure_chipset: 'asc',
+  price: 'desc', score: 'desc', CP: 'desc',
+};
+
+// 所有排序欄位清單
+const DB_ALL_SORT_COLS = ['chipset', 'product', 'price', 'pure_chipset', 'score', 'CP'];
+
+let dbBrowseSort = 'CP';
+let dbBrowseOrder = 'desc';
+let dbBrowsePage = 1;
+let dbBrowseTotalPages = 1;
+let dbBrowseSearchTimer = null;
+let dbBrowsePriceTimer = null;
+
+async function loadDbBrowse(opts = {}) {
+  const tbody = document.getElementById('db-tbody');
+  if (!tbody) return;
+
+  // 讀取當前各控制元件的值（未傳入時用全域狀態/DOM）
+  const search  = opts.search  !== undefined ? opts.search  : (document.getElementById('db-search-input')?.value?.trim() || '');
+  const sort    = opts.sort    !== undefined ? opts.sort    : dbBrowseSort;
+  const order   = opts.order   !== undefined ? opts.order   : dbBrowseOrder;
+  const page    = opts.page    !== undefined ? opts.page    : dbBrowsePage;
+  const priceMin = opts.priceMin !== undefined ? opts.priceMin : (document.getElementById('db-price-min')?.value?.trim() || '');
+  const priceMax = opts.priceMax !== undefined ? opts.priceMax : (document.getElementById('db-price-max')?.value?.trim() || '');
+
+  // 更新全域狀態
+  dbBrowseSort  = sort;
+  dbBrowseOrder = order;
+  dbBrowsePage  = page;
+
+  tbody.innerHTML = '<tr><td colspan="6" class="db-empty">載入中...</td></tr>';
+
+  const params = new URLSearchParams({ sort, order, page });
+  if (search)   params.set('search', search);
+  if (priceMin) params.set('price_min', priceMin);
+  if (priceMax) params.set('price_max', priceMax);
+
+  try {
+    const res = await fetch('/api/db-browse?' + params.toString());
+    const data = await res.json();
+
+    if (data.error) {
+      tbody.innerHTML = `<tr><td colspan="6" class="db-empty">⚠️ 無法載入資料：${escapeHtml(data.error)}</td></tr>`;
+      return;
+    }
+
+    dbBrowseTotalPages = data.total_pages || 1;
+    dbBrowsePage = data.page || 1;
+    renderDbTable(data.rows || [], data.total || 0, data.latest_date || '', data.page || 1, data.total_pages || 1);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="db-empty">⚠️ 連線失敗：${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function renderDbTable(rows, total, latestDate, page, totalPages) {
+  const tbody    = document.getElementById('db-tbody');
+  const countEl  = document.getElementById('db-count');
+  const dateBadge = document.getElementById('db-browser-date');
+  const pageInfo  = document.getElementById('db-page-info');
+  const prevBtn   = document.getElementById('db-page-prev');
+  const nextBtn   = document.getElementById('db-page-next');
+
+  // 日期 badge
+  if (dateBadge && latestDate) {
+    dateBadge.textContent = `資料日期：${latestDate}`;
+  }
+
+  // 排序箭頭：更新所有六欄
+  DB_ALL_SORT_COLS.forEach(col => {
+    const th    = document.getElementById(`th-${col}`);
+    const arrow = document.getElementById(`arrow-${col}`);
+    if (!th || !arrow) return;
+    if (col === dbBrowseSort) {
+      th.classList.add('active');
+      arrow.textContent = dbBrowseOrder === 'desc' ? '▾' : '▴';
+    } else {
+      th.classList.remove('active');
+      arrow.textContent = '';
+    }
+  });
+
+  // 筆數
+  if (countEl) {
+    const hasFilter = (document.getElementById('db-search-input')?.value?.trim() ||
+                       document.getElementById('db-price-min')?.value?.trim()   ||
+                       document.getElementById('db-price-max')?.value?.trim());
+    countEl.textContent = hasFilter ? `篩選結果：${total} 筆` : `共 ${total} 筆`;
+  }
+
+  // 分頁列
+  if (pageInfo) pageInfo.textContent = `第 ${page} 頁，共 ${totalPages} 頁`;
+  if (prevBtn)  prevBtn.disabled  = (page <= 1);
+  if (nextBtn)  nextBtn.disabled  = (page >= totalPages);
+
+  // 無資料
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="db-empty">查無符合條件的資料</td></tr>';
+    return;
+  }
+
+  // 渲染列
+  const html = rows.map(r => {
+    const price      = r.price != null ? `$${Number(r.price).toLocaleString()}` : '—';
+    const score      = r.score != null ? Number(r.score).toLocaleString() : '—';
+    const cp         = r.CP   != null ? r.CP.toFixed(4) : '—';
+    const chipset    = escapeHtml(r.chipset     || '—');
+    const product    = escapeHtml(r.product     || '—');
+    const pureChipset = escapeHtml(r.pure_chipset || '—');
+
+    return `
+      <tr>
+        <td class="db-td db-td-chipset">${chipset}</td>
+        <td class="db-td db-td-product">${product}</td>
+        <td class="db-td db-td-price">${price}</td>
+        <td class="db-td db-td-pure-chipset">${pureChipset}</td>
+        <td class="db-td db-td-score">${score}</td>
+        <td class="db-td db-td-cp">${cp}</td>
+      </tr>`;
+  }).join('');
+
+  tbody.innerHTML = html;
+}
+
+function dbChangePage(delta) {
+  const newPage = dbBrowsePage + delta;
+  if (newPage < 1 || newPage > dbBrowseTotalPages) return;
+  loadDbBrowse({ page: newPage });
+}
+
+function attachDbBrowseEvents() {
+  // 搜尋框 debounce
+  const searchInput = document.getElementById('db-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(dbBrowseSearchTimer);
+      dbBrowseSearchTimer = setTimeout(() => {
+        loadDbBrowse({ page: 1 });
+      }, 300);
+    });
+  }
+
+  // 售價範圍 debounce
+  const priceMin = document.getElementById('db-price-min');
+  const priceMax = document.getElementById('db-price-max');
+  const priceClear = document.getElementById('db-price-clear');
+
+  const onPriceInput = () => {
+    clearTimeout(dbBrowsePriceTimer);
+    dbBrowsePriceTimer = setTimeout(() => {
+      loadDbBrowse({ page: 1 });
+    }, 400);
+  };
+
+  if (priceMin) priceMin.addEventListener('input', onPriceInput);
+  if (priceMax) priceMax.addEventListener('input', onPriceInput);
+
+  if (priceClear) {
+    priceClear.addEventListener('click', () => {
+      if (priceMin) priceMin.value = '';
+      if (priceMax) priceMax.value = '';
+      loadDbBrowse({ page: 1 });
+    });
+  }
+
+  // 排序欄位標頭點擊（六欄）
+  document.querySelectorAll('.db-th-sort').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (!col) return;
+
+      if (dbBrowseSort === col) {
+        // 同欄位：切換升降序
+        dbBrowseOrder = dbBrowseOrder === 'desc' ? 'asc' : 'desc';
+      } else {
+        // 換新欄位：按欄位類型決定預設排序方向
+        dbBrowseSort  = col;
+        dbBrowseOrder = DB_SORT_DEFAULT_ORDER[col] || 'desc';
+      }
+
+      loadDbBrowse({ sort: dbBrowseSort, order: dbBrowseOrder, page: 1 });
+    });
+  });
+}
+
+

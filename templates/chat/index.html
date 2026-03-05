@@ -121,9 +121,96 @@
   </div>
 </div>
 
+<!-- DB 瀏覽區塊 -->
+<div class="db-browser-section" id="db-browser-section">
+  <div class="db-browser-header">
+    <div class="db-browser-title">
+      <span class="db-browser-icon">📋</span>
+      <span>資料庫瀏覽</span>
+      <span class="db-browser-date-badge" id="db-browser-date"></span>
+    </div>
+    <div class="db-controls-row">
+      <!-- 售價範圍 -->
+      <div class="db-price-range">
+        <span class="db-price-label">售價</span>
+        <input
+          type="number"
+          class="db-price-input"
+          id="db-price-min"
+          placeholder="最低（元）"
+          min="0"
+          step="1000"
+        >
+        <span class="db-price-sep">—</span>
+        <input
+          type="number"
+          class="db-price-input"
+          id="db-price-max"
+          placeholder="最高（元）"
+          min="0"
+          step="1000"
+        >
+        <button class="db-price-clear" id="db-price-clear" title="清除價格篩選">✕</button>
+      </div>
+      <!-- 搜尋框 -->
+      <div class="db-search-wrap">
+        <span class="db-search-icon">🔍</span>
+        <input
+          type="text"
+          class="db-search-input"
+          id="db-search-input"
+          placeholder="搜尋顯卡名稱..."
+          autocomplete="off"
+        >
+      </div>
+    </div>
+  </div>
+
+  <div class="db-table-wrap">
+    <table class="db-table" id="db-table">
+      <thead>
+        <tr>
+          <th class="db-th db-th-sort" data-col="chipset" id="th-chipset">
+            原廠分類<span class="db-sort-arrow" id="arrow-chipset"></span>
+          </th>
+          <th class="db-th db-th-sort" data-col="product" id="th-product">
+            商品名稱<span class="db-sort-arrow" id="arrow-product"></span>
+          </th>
+          <th class="db-th db-th-sort" data-col="price" id="th-price">
+            售價（元）<span class="db-sort-arrow" id="arrow-price"></span>
+          </th>
+          <th class="db-th db-th-sort" data-col="pure_chipset" id="th-pure_chipset">
+            標準晶片名<span class="db-sort-arrow" id="arrow-pure_chipset"></span>
+          </th>
+          <th class="db-th db-th-sort" data-col="score" id="th-score">
+            跑分<span class="db-sort-arrow" id="arrow-score"></span>
+          </th>
+          <th class="db-th db-th-sort" data-col="CP" id="th-CP">
+            CP 值<span class="db-sort-arrow" id="arrow-CP">▾</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody id="db-tbody">
+        <tr><td colspan="6" class="db-empty">載入中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="db-footer">
+    <span class="db-count" id="db-count">共 0 筆</span>
+    <div class="db-pagination" id="db-pagination">
+      <button class="db-page-btn" id="db-page-prev" onclick="dbChangePage(-1)" disabled>‹</button>
+      <span class="db-page-info" id="db-page-info">第 1 頁，共 1 頁</span>
+      <button class="db-page-btn" id="db-page-next" onclick="dbChangePage(1)" disabled>›</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- Toast Container -->
 <div id="toast-container"></div>
 
 <script src="{% static 'js/app.js' %}"></script>
 </body>
 </html>
+
