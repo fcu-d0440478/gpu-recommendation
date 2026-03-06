@@ -54,3 +54,6 @@ geckodriver*
 
 # ─── Jupyter Notebook checkpoint ─────────────────────
 .ipynb_checkpoints/
+
+# ─── 靜態檔案 ───────────────────────────────────────
+staticfiles/
