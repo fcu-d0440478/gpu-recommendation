@@ -258,12 +258,8 @@ def api_chat(request):
     window_pct = result.get("window_used_pct", 10)
     latest_date = result.get("latest_date")
     
-    # 建立推薦資料的 prompt
-    recs_text = "\n".join([
-        f"- {r['product']}（{r['pure_chipset']}）\n"
-        f"  價格：${r['price']:,}｜分數：{r['score']:,}｜CP 值：{r['CP']:.4f}"
-        for r in recommendations
-    ])
+    # 先由後端固定排序，避免 LLM 誤判小數大小
+    recommendations = sorted(recommendations, key=lambda r: r.get("CP", 0), reverse=True)
     
     # 計算價差百分比
     for rec in recommendations:
@@ -298,10 +294,17 @@ def api_chat(request):
             f"【目標卡】{tgi['product']}（{tgi['pure_chipset']}）"
             f"｜售價：${tgi['price']:,}｜跑分：{tgi['score']:,}｜CP 值：{tgi['CP']:.4f}"
         )
-        alt_lines = "\n".join([
+        sorted_alt_lines = "\n".join([
             f"{i+1}. {r['product']}（{r['pure_chipset']}）"
             f"｜售價：${r['price']:,}｜跑分：{r['score']:,}｜CP 值：{r['CP']:.4f}｜價差：{r['price_diff_pct']}"
             for i, r in enumerate(recommendations)
+        ])
+        rank_pool = [{"label": f"目標卡 {tgi['pure_chipset']}", "cp": tgi["CP"]}] + [
+            {"label": f"替代 {r['pure_chipset']}", "cp": r["CP"]} for r in recommendations
+        ]
+        rank_pool = sorted(rank_pool, key=lambda x: x["cp"], reverse=True)
+        rank_lines = "\n".join([
+            f"{i+1}. {r['label']}｜CP={r['cp']:.4f}" for i, r in enumerate(rank_pool)
         ])
         prompt = f"""【資料庫查詢完畢，請立即分析，不得提問】
 
@@ -310,8 +313,11 @@ def api_chat(request):
 
 {target_line}
 
-同價位替代方案（依 CP 值排序）：
-{alt_lines}
+同價位替代方案（系統已依 CP 值由高到低排序，請勿重排）：
+{sorted_alt_lines}
+
+CP 排名（系統已排序，請直接引用，不要自行重新比較小數）：
+{rank_lines}
 
 請直接輸出比較分析：
 1. 目標卡（{tgi['pure_chipset']}）CP 值評價——在同價位中是否划算？

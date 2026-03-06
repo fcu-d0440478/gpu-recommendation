@@ -149,6 +149,29 @@ def skill_get_gpu_recommendations(
                     results = deduped[:top_k]
                     window_used_pct = int(pct * 100)
                     break
+
+            # 比較模式補強：對已選出的型號，回查是否存在「更便宜且 CP 更高」的同型號版本
+            optimized_results = []
+            for item in results:
+                cursor.execute(
+                    """
+                    SELECT date, chipset, product, price, pure_chipset, score, CP
+                    FROM filtered_df
+                    WHERE date = ?
+                      AND pure_chipset = ?
+                      AND price < ?
+                      AND CP > ?
+                    ORDER BY CP DESC, price ASC
+                    LIMIT 1
+                    """,
+                    [latest_date, item["pure_chipset"], item["price"], item["CP"]],
+                )
+                better = cursor.fetchone()
+                if better:
+                    optimized_results.append(dict(better))
+                else:
+                    optimized_results.append(item)
+            results = optimized_results
         else:
             # 預算模式：維持既有規則（效能底線 + CP 排序）
             min_score = int(base_score * 0.95)
