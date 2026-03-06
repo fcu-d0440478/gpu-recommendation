@@ -20,9 +20,16 @@ SECRET_KEY = os.environ.get(
     'django-insecure-change-me-in-production-set-env-var'
 )
 
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# 允許連線的網域列表
+# 例如: 'gpu-recommendation.up.railway.app,localhost,127.0.0.1'
+allowed_hosts_env = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+
+# CSRF 信任的網域（這在雲端 HTTPS 往往是必需的）
+csrf_origins_env = os.environ.get('DJANGO_CSRF_ORIGINS', 'http://localhost,http://127.0.0.1')
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
