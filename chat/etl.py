@@ -116,11 +116,11 @@ def crawl_ul_benchmark() -> list[dict]:
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
             page = browser.new_page()
-            page.goto(url, wait_until="networkidle")
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(5000)
 
             # 等待表格出現
-            table_rows = page.locator("/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr")
+            table_rows = page.locator("xpath=/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr")
             count = table_rows.count()
             logger.info(f"找到 {count} 筆 GPU 資料")
 
