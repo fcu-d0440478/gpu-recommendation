@@ -53,95 +53,91 @@ def _save_mapping(mapping: dict):
 
 def crawl_coolpc() -> list[dict]:
     """
-    爬取 CoolPC 原價屋 evaluate.php VGA 分類 (使用 Playwright)。
+    爬取 CoolPC 原價屋 evaluate.php VGA 分類（使用 requests + BeautifulSoup4）。
     回傳 [{chipset, product, price}]
     """
-    from playwright.sync_api import sync_playwright
+    import requests
+    from bs4 import BeautifulSoup
+
+    url = "https://www.coolpc.com.tw/evaluate.php"
+    logger.info(f"正在爬取 CoolPC：{url}")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.encoding = resp.apparent_encoding  # CoolPC 是 Big5 編碼
+    soup = BeautifulSoup(resp.text, "lxml")
+
+    # 找到寬度較小的 td 且含 VGA 字樣，再拿其隔壁 td（含 optgroup）
+    vga_td = None
+    for td in soup.find_all("td"):
+        if "VGA" in td.get_text():
+            sib = td.find_next_sibling("td")
+            if sib and sib.find("optgroup"):
+                vga_td = sib
+                break
+
+    if not vga_td:
+        raise RuntimeError("找不到 CoolPC 顯示卡VGA 分類")
+    optgroups = vga_td.find_all("optgroup")
 
     results = []
-    try:
-        url = "https://www.coolpc.com.tw/evaluate.php"
-        logger.info(f"正在爬取 CoolPC：{url}")
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded")
-            page.wait_for_timeout(3000)
+    for optgroup in optgroups:
+        chipset = optgroup.get("label", "").strip()
+        for option in optgroup.find_all("option"):
+            text = " ".join(option.get_text().split())
+            match = re.search(r"(.+?),?\s*\$([\d,]+)", text)
+            if match:
+                product = match.group(1).strip()
+                price = int(match.group(2).replace(",", ""))
+                results.append({"chipset": chipset, "product": product, "price": price})
 
-            # 抓取包含 "顯示卡VGA" 的欄位
-            vga_td_handle = page.locator('//td[contains(text(),"顯示卡VGA")]/following-sibling::td[1]')
-            optgroups = vga_td_handle.locator("optgroup")
-            
-            count = optgroups.count()
-            for i in range(count):
-                optgroup = optgroups.nth(i)
-                chipset = optgroup.get_attribute("label").strip()
-                options = optgroup.locator("option")
-                opt_count = options.count()
-                
-                for j in range(opt_count):
-                    option = options.nth(j)
-                    text = " ".join(option.inner_text().split())
-                    match = re.search(r"(.+?),?\s*\$([\d,]+)", text)
-                    if match:
-                        product = match.group(1).strip()
-                        price = int(match.group(2).replace(",", ""))
-                        results.append({"chipset": chipset, "product": product, "price": price})
-            
-            browser.close()
-            
-        logger.info(f"CoolPC 爬取完成，共 {len(results)} 筆")
-    except Exception as e:
-        logger.error(f"CoolPC 爬取失敗：{e}")
-        raise
+    logger.info(f"CoolPC 爬取完成，共 {len(results)} 筆")
     return results
 
 
 def crawl_ul_benchmark() -> list[dict]:
     """
-    爬取 UL Benchmark GPU 分數頁面 (使用 Playwright)。
+    爬取 UL Benchmark GPU 分數頁面（使用 requests + BeautifulSoup4）。
     回傳 [{name, score}]，同名取最高分。
     """
-    from playwright.sync_api import sync_playwright
+    import requests
+    from bs4 import BeautifulSoup
 
-    results = []
     url = (
         "https://benchmarks.ul.com/compare/best-gpus"
         "?amount=0&sortBy=SCORE&reverseOrder=true&types=DESKTOP&minRating=0"
     )
     logger.info(f"正在爬取 UL Benchmark：{url}")
-    
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(5000)
 
-            # 等待表格出現
-            table_rows = page.locator("xpath=/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr")
-            count = table_rows.count()
-            logger.info(f"找到 {count} 筆 GPU 資料")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "lxml")
 
-            for i in range(count):
-                row = table_rows.nth(i)
-                try:
-                    name_locator = row.locator("td:nth-child(2) a")
-                    score_locator = row.locator("td:nth-child(4) div div span")
-                    
-                    gpu_name = name_locator.inner_text().strip()
-                    gpu_score = int(score_locator.inner_text().strip().replace(",", ""))
-                    results.append({"name": gpu_name, "score": gpu_score})
-                except Exception as e:
-                    logger.warning(f"第 {i+1} 筆 UL 資料解析失敗：{e}")
-                    continue
+    results = []
+    table = soup.find("table")
+    if not table:
+        raise RuntimeError("UL Benchmark 頁面找不到資料表格")
 
-            browser.close()
-            
-    except Exception as e:
-        logger.error(f"UL Benchmark 爬取失敗：{e}")
-        raise
+    for row in table.find("tbody").find_all("tr"):
+        try:
+            tds = row.find_all("td")
+            if len(tds) < 4:
+                continue
+            # 第 2 欄：GPU 名稱連結
+            name_tag = tds[1].find("a")
+            # 第 4 欄：跑分數字（span 最內層）
+            score_tag = tds[3].find("span")
+            if not name_tag or not score_tag:
+                continue
+            gpu_name = name_tag.get_text(strip=True)
+            gpu_score = int(score_tag.get_text(strip=True).replace(",", ""))
+            results.append({"name": gpu_name, "score": gpu_score})
+        except Exception as e:
+            logger.warning(f"UL 資料列解析失敗：{e}")
+            continue
+
+    logger.info(f"UL Benchmark 爬取完成，共 {len(results)} 筆")
 
     # 同名取最高分並去重
     if results:
