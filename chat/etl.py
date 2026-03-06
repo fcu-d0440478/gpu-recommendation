@@ -5,11 +5,13 @@ import json
 import logging
 import re
 import sqlite3
-import time
+import html
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -53,91 +55,99 @@ def _save_mapping(mapping: dict):
 
 def crawl_coolpc() -> list[dict]:
     """
-    爬取 CoolPC 原價屋 evaluate.php VGA 分類（使用 requests + BeautifulSoup4）。
+    爬取 CoolPC 原價屋 evaluate.php VGA 分類。
+    參照 1 wayback_vga_tracker.py 的邏輯，改為爬取「即時頁面」。
     回傳 [{chipset, product, price}]
     """
-    import requests
-    from bs4 import BeautifulSoup
-
-    url = "https://www.coolpc.com.tw/evaluate.php"
-    logger.info(f"正在爬取 CoolPC：{url}")
-
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.encoding = resp.apparent_encoding  # CoolPC 是 Big5 編碼
-    soup = BeautifulSoup(resp.text, "lxml")
-
-    # 找到寬度較小的 td 且含 VGA 字樣，再拿其隔壁 td（含 optgroup）
-    vga_td = None
-    for td in soup.find_all("td"):
-        if "VGA" in td.get_text():
-            sib = td.find_next_sibling("td")
-            if sib and sib.find("optgroup"):
-                vga_td = sib
-                break
-
-    if not vga_td:
-        raise RuntimeError("找不到 CoolPC 顯示卡VGA 分類")
-    optgroups = vga_td.find_all("optgroup")
-
     results = []
-    for optgroup in optgroups:
-        chipset = optgroup.get("label", "").strip()
-        for option in optgroup.find_all("option"):
-            text = " ".join(option.get_text().split())
+    try:
+        url = "https://www.coolpc.com.tw/evaluate.php"
+        logger.info(f"正在爬取 CoolPC：{url}")
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        resp.encoding = "big5"
+        page = resp.text
+        select_match = re.search(
+            r"<select[^>]*\bname\s*=\s*(?:[\"']?n12[\"']?)\b[^>]*>",
+            page,
+            flags=re.IGNORECASE,
+        )
+        if select_match is None:
+            raise RuntimeError("找不到 CoolPC 顯示卡下拉選單（n12）")
+
+        select_end = page.lower().find("</select>", select_match.end())
+        if select_end == -1:
+            raise RuntimeError("CoolPC 顯示卡下拉選單格式異常（缺少 </select>）")
+
+        vga_segment = page[select_match.end():select_end]
+        token_pattern = re.compile(
+            r"<optgroup[^>]*label\s*=\s*(?:[\"']([^\"']*)[\"']|([^\s>]+))[^>]*>"
+            r"|<option[^>]*>(.*?)</option>",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        chipset = ""
+        for token in token_pattern.finditer(vga_segment):
+            label = token.group(1) or token.group(2)
+            if label is not None:
+                chipset = html.unescape(label).strip()
+                continue
+
+            option_html = token.group(3) or ""
+            text = " ".join(re.sub(r"<[^>]+>", "", html.unescape(option_html)).split())
+            if not text:
+                continue
+            if not chipset:
+                continue
             match = re.search(r"(.+?),?\s*\$([\d,]+)", text)
             if match:
                 product = match.group(1).strip()
                 price = int(match.group(2).replace(",", ""))
                 results.append({"chipset": chipset, "product": product, "price": price})
 
-    logger.info(f"CoolPC 爬取完成，共 {len(results)} 筆")
+        logger.info(f"CoolPC 爬取完成，共 {len(results)} 筆")
+    except Exception as e:
+        logger.error(f"CoolPC 爬取失敗：{e}")
+        raise
     return results
 
 
 def crawl_ul_benchmark() -> list[dict]:
     """
-    爬取 UL Benchmark GPU 分數頁面（使用 requests + BeautifulSoup4）。
+    爬取 UL Benchmark GPU 分數頁面。
+    參照 2 gpu_scraper_ul.py 的邏輯。
     回傳 [{name, score}]，同名取最高分。
     """
-    import requests
-    from bs4 import BeautifulSoup
-
-    url = (
-        "https://benchmarks.ul.com/compare/best-gpus"
-        "?amount=0&sortBy=SCORE&reverseOrder=true&types=DESKTOP&minRating=0"
-    )
-    logger.info(f"正在爬取 UL Benchmark：{url}")
-
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    resp = requests.get(url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "lxml")
-
     results = []
-    table = soup.find("table")
-    if not table:
-        raise RuntimeError("UL Benchmark 頁面找不到資料表格")
+    try:
+        url = (
+            "https://benchmarks.ul.com/compare/best-gpus"
+            "?amount=0&sortBy=SCORE&reverseOrder=true&types=DESKTOP&minRating=0"
+        )
+        logger.info(f"正在爬取 UL Benchmark：{url}")
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+        rows = soup.select("table tbody tr")
+        logger.info(f"找到 {len(rows)} 筆 GPU 資料")
 
-    for row in table.find("tbody").find_all("tr"):
-        try:
-            tds = row.find_all("td")
-            if len(tds) < 4:
+        for index, row in enumerate(rows, start=1):
+            try:
+                cols = row.find_all("td")
+                if len(cols) < 4:
+                    raise ValueError("欄位不足")
+                gpu_name = cols[1].get_text(strip=True)
+                score_text = cols[3].get_text(strip=True).replace(",", "")
+                gpu_score = int(score_text)
+                results.append({"name": gpu_name, "score": gpu_score})
+            except Exception as e:
+                logger.warning(f"第 {index} 筆 UL 資料解析失敗：{e}")
                 continue
-            # 第 2 欄：GPU 名稱連結
-            name_tag = tds[1].find("a")
-            # 第 4 欄：跑分數字（span 最內層）
-            score_tag = tds[3].find("span")
-            if not name_tag or not score_tag:
-                continue
-            gpu_name = name_tag.get_text(strip=True)
-            gpu_score = int(score_tag.get_text(strip=True).replace(",", ""))
-            results.append({"name": gpu_name, "score": gpu_score})
-        except Exception as e:
-            logger.warning(f"UL 資料列解析失敗：{e}")
-            continue
 
-    logger.info(f"UL Benchmark 爬取完成，共 {len(results)} 筆")
+        logger.info(f"UL Benchmark 爬取完成，共 {len(results)} 筆")
+    except Exception as e:
+        logger.error(f"UL Benchmark 爬取失敗：{e}")
+        raise
 
     # 同名取最高分並去重
     if results:
@@ -149,7 +159,7 @@ def crawl_ul_benchmark() -> list[dict]:
 
 def llm_map_chipsets(unknown_chipsets: list[str], ul_gpu_names: list[str]) -> dict:
     """
-    呼叫 Ollama（qwen3:4b）批次對應未知 chipset 到 UL 標準名稱。
+    呼叫 Groq（llama-3.1-8b-instant）批次對應未知 chipset 到 UL 標準名稱。
     回傳 {chipset: ul_name_or_null}
     """
     from chat.llm_client import LLMClient
