@@ -52,8 +52,9 @@ def skill_get_gpu_recommendations(
 ) -> dict:
     """
     查詢最新日期資料，回傳 CP 值最高的 Top K 顯示卡。
-    支援預算模式和目標顯卡比較模式。
-    候選不足時自動放寬 ±5%，最大到 ±30%。
+    支援預算模式和目標顯卡比較模式：
+    - 預算模式：維持效能門檻（min_score）+ CP 排序
+    - 比較模式：同價位、不同型號（不同 pure_chipset），不套用效能門檻
     """
     if budget_twd is None and target_gpu is None:
         return {"error": "請提供預算或目標顯卡名稱"}
@@ -106,33 +107,69 @@ def skill_get_gpu_recommendations(
             row = cursor.fetchone()
             base_score = row[0] if row and row[0] else 0
 
-        # 將效能底線設為基準效能的 95 折 (打 95 折，容許微小效能妥協換取巨大價差)
-        min_score = int(base_score * 0.95)
+        results = []
+        window_used_pct = int(price_window_pct * 100)
 
-        # 直接套用不對稱區間：向下深挖至 30%，向上放寬 15%
-        low = int(base_price * 0.70)
-        high = int(base_price * 1.15)
-        window_used_pct = 15
+        # 比較模式：同價位、不同型號（不同 pure_chipset），不套用效能門檻
+        if target_gpu is not None:
+            windows = [price_window_pct, 0.15, 0.20, 0.25, 0.30]
+            seen = set()
+            deduped = []
 
-        sql = """
-            SELECT date, chipset, product, price, pure_chipset, score, CP
-            FROM filtered_df
-            WHERE date = ?
-                AND price BETWEEN ? AND ?
-                AND score >= ?
-        """
-        params = [latest_date, low, high, min_score]
+            for pct in windows:
+                low = int(base_price * (1 - pct))
+                high = int(base_price * (1 + pct))
 
-        if exclude_pure_chipset:
-            sql += " AND pure_chipset != ?"
-            params.append(exclude_pure_chipset)
+                cursor.execute(
+                    """
+                    SELECT date, chipset, product, price, pure_chipset, score, CP
+                    FROM filtered_df
+                    WHERE date = ?
+                      AND price BETWEEN ? AND ?
+                      AND pure_chipset != ?
+                    ORDER BY CP DESC
+                    """,
+                    [latest_date, low, high, exclude_pure_chipset],
+                )
+                rows = cursor.fetchall()
 
-        sql += " ORDER BY CP DESC LIMIT ?"
-        params.append(top_k)
+                seen.clear()
+                deduped.clear()
+                for r in rows:
+                    item = dict(r)
+                    model = item.get("pure_chipset")
+                    if not model or model in seen:
+                        continue
+                    seen.add(model)
+                    deduped.append(item)
+                    if len(deduped) >= top_k:
+                        break
 
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        results = [dict(r) for r in rows]
+                if deduped:
+                    results = deduped[:top_k]
+                    window_used_pct = int(pct * 100)
+                    break
+        else:
+            # 預算模式：維持既有規則（效能底線 + CP 排序）
+            min_score = int(base_score * 0.95)
+            low = int(base_price * 0.70)
+            high = int(base_price * 1.15)
+            window_used_pct = 15
+
+            cursor.execute(
+                """
+                SELECT date, chipset, product, price, pure_chipset, score, CP
+                FROM filtered_df
+                WHERE date = ?
+                  AND price BETWEEN ? AND ?
+                  AND score >= ?
+                ORDER BY CP DESC
+                LIMIT ?
+                """,
+                [latest_date, low, high, min_score, top_k],
+            )
+            rows = cursor.fetchall()
+            results = [dict(r) for r in rows]
 
         return {
             "recommendations": results,

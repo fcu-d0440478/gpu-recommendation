@@ -277,7 +277,7 @@ def api_chat(request):
     if not recommendations:
         is_compare_mode = (target_gpu is not None)
         if is_compare_mode:
-            assistant_msg = f"抱歉，資料庫中目前找不到與 {target_gpu} 價格（${base_price:,}）相近且效能相當的替代顯示卡。這可能是因為該型號在這價位帶已經沒有更具 CP 值的競爭對手，或者資料庫缺少相關報價。建議您嘗試比較其他型號，或更新資料庫。"
+            assistant_msg = f"抱歉，資料庫中目前找不到與 {target_gpu} 同價位且不同型號的替代顯示卡。您可以嘗試其他型號關鍵字，或先更新資料庫後再比較。"
         else:
             assistant_msg = f"抱歉，資料庫中目前找不到價格在 ${base_price:,} 元附近範圍內的顯示卡。建議調整預算範圍或重新更新資料庫。"
             
