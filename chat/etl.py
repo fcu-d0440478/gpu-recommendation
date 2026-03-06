@@ -53,111 +53,95 @@ def _save_mapping(mapping: dict):
 
 def crawl_coolpc() -> list[dict]:
     """
-    爬取 CoolPC 原價屋 evaluate.php VGA 分類。
-    參照 1 wayback_vga_tracker.py 的邏輯，改為爬取「即時頁面」。
+    爬取 CoolPC 原價屋 evaluate.php VGA 分類 (使用 Playwright)。
     回傳 [{chipset, product, price}]
     """
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
+    from playwright.sync_api import sync_playwright
 
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(options=chrome_options)
     results = []
     try:
         url = "https://www.coolpc.com.tw/evaluate.php"
         logger.info(f"正在爬取 CoolPC：{url}")
-        driver.get(url)
-        time.sleep(5)
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
 
-        vga_td = driver.find_element(
-            By.XPATH, '//td[contains(text(),"顯示卡VGA")]/following-sibling::td[1]'
-        )
-        optgroups = vga_td.find_elements(By.XPATH, ".//optgroup")
-
-        for optgroup in optgroups:
-            chipset = optgroup.get_attribute("label").strip()
-            options = optgroup.find_elements(By.TAG_NAME, "option")
-            for option in options:
-                text = " ".join(option.text.split())
-                match = re.search(r"(.+?),?\s*\$([\d,]+)", text)
-                if match:
-                    product = match.group(1).strip()
-                    price = int(match.group(2).replace(",", ""))
-                    results.append({"chipset": chipset, "product": product, "price": price})
-
+            # 抓取包含 "顯示卡VGA" 的欄位
+            vga_td_handle = page.locator('//td[contains(text(),"顯示卡VGA")]/following-sibling::td[1]')
+            optgroups = vga_td_handle.locator("optgroup")
+            
+            count = optgroups.count()
+            for i in range(count):
+                optgroup = optgroups.nth(i)
+                chipset = optgroup.get_attribute("label").strip()
+                options = optgroup.locator("option")
+                opt_count = options.count()
+                
+                for j in range(opt_count):
+                    option = options.nth(j)
+                    text = " ".join(option.inner_text().split())
+                    match = re.search(r"(.+?),?\s*\$([\d,]+)", text)
+                    if match:
+                        product = match.group(1).strip()
+                        price = int(match.group(2).replace(",", ""))
+                        results.append({"chipset": chipset, "product": product, "price": price})
+            
+            browser.close()
+            
         logger.info(f"CoolPC 爬取完成，共 {len(results)} 筆")
     except Exception as e:
         logger.error(f"CoolPC 爬取失敗：{e}")
         raise
-    finally:
-        driver.quit()
     return results
 
 
 def crawl_ul_benchmark() -> list[dict]:
     """
-    爬取 UL Benchmark GPU 分數頁面。
-    參照 2 gpu_scraper_ul.py 的邏輯。
+    爬取 UL Benchmark GPU 分數頁面 (使用 Playwright)。
     回傳 [{name, score}]，同名取最高分。
     """
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
+    from playwright.sync_api import sync_playwright
 
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(options=chrome_options)
     results = []
+    url = (
+        "https://benchmarks.ul.com/compare/best-gpus"
+        "?amount=0&sortBy=SCORE&reverseOrder=true&types=DESKTOP&minRating=0"
+    )
+    logger.info(f"正在爬取 UL Benchmark：{url}")
+    
     try:
-        url = (
-            "https://benchmarks.ul.com/compare/best-gpus"
-            "?amount=0&sortBy=SCORE&reverseOrder=true&types=DESKTOP&minRating=0"
-        )
-        logger.info(f"正在爬取 UL Benchmark：{url}")
-        driver.get(url)
-        time.sleep(8)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page()
+            page.goto(url, wait_until="networkidle")
+            page.wait_for_timeout(5000)
 
-        rows = driver.find_elements(
-            By.XPATH,
-            "/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr",
-        )
-        logger.info(f"找到 {len(rows)} 筆 GPU 資料")
+            # 等待表格出現
+            table_rows = page.locator("/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr")
+            count = table_rows.count()
+            logger.info(f"找到 {count} 筆 GPU 資料")
 
-        for index, row in enumerate(rows, start=1):
-            try:
-                name_element = driver.find_element(
-                    By.XPATH,
-                    f"/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr[{index}]/td[2]/a",
-                )
-                score_element = driver.find_element(
-                    By.XPATH,
-                    f"/html/body/div[2]/main/div/div[3]/div/div[6]/div/div/table/tbody/tr[{index}]/td[4]/div/div/span",
-                )
-                gpu_name = name_element.text.strip()
-                gpu_score = int(score_element.text.strip().replace(",", ""))
-                results.append({"name": gpu_name, "score": gpu_score})
-            except Exception as e:
-                logger.warning(f"第 {index} 筆 UL 資料解析失敗：{e}")
-                continue
+            for i in range(count):
+                row = table_rows.nth(i)
+                try:
+                    name_locator = row.locator("td:nth-child(2) a")
+                    score_locator = row.locator("td:nth-child(4) div div span")
+                    
+                    gpu_name = name_locator.inner_text().strip()
+                    gpu_score = int(score_locator.inner_text().strip().replace(",", ""))
+                    results.append({"name": gpu_name, "score": gpu_score})
+                except Exception as e:
+                    logger.warning(f"第 {i+1} 筆 UL 資料解析失敗：{e}")
+                    continue
 
-        logger.info(f"UL Benchmark 爬取完成，共 {len(results)} 筆")
+            browser.close()
+            
     except Exception as e:
         logger.error(f"UL Benchmark 爬取失敗：{e}")
         raise
-    finally:
-        driver.quit()
 
     # 同名取最高分並去重
     if results:
