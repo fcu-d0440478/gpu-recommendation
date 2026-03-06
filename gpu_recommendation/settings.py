@@ -77,10 +77,9 @@ GPU_DB_PATH = BASE_DIR / 'filtered_df.db'
 # Mapping JSON 路徑
 GPU_MAPPING_JSON_PATH = BASE_DIR / 'gpu_mapping_checklist.json'
 
-# Ollama 設定
-OLLAMA_API_URL = 'http://localhost:11434/api/generate'
-OLLAMA_MODEL = 'qwen3:4b'
-OLLAMA_TIMEOUT = 120
+# Groq API 設定
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
+GROQ_MODEL = os.environ.get('GROQ_MODEL', 'llama-3.1-8b-instant')
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},

@@ -172,9 +172,9 @@ def llm_map_chipsets(unknown_chipsets: list[str], ul_gpu_names: list[str]) -> di
     呼叫 Ollama（qwen3:4b）批次對應未知 chipset 到 UL 標準名稱。
     回傳 {chipset: ul_name_or_null}
     """
-    from chat.ollama_client import OllamaClient
+    from chat.llm_client import LLMClient
 
-    client = OllamaClient()
+    client = LLMClient()
 
     system_prompt = """你是 GPU 型號對應專家。請將 CoolPC 原價屋的顯卡分類名稱（chipset）
 對應到以下標準 GPU 型號列表（來自 UL Benchmark）。

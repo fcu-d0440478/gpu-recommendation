@@ -14,7 +14,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from chat.ollama_client import OllamaClient
+from chat.llm_client import LLMClient
 from chat.skills import (
     skill_get_gpu_recommendations,
     skill_get_db_meta,
@@ -349,8 +349,8 @@ def api_chat(request):
 不得詢問使用者任何問題，直接給出分析結果。"""
         all_cards = recommendations
 
-    # ── 呼叫 Ollama ──────────────────────────────────────────────
-    client = OllamaClient()
+    # ── 呼叫 LLM ──────────────────────────────────────────────
+    client = LLMClient()
     try:
         assistant_message = client.generate(prompt, system=SYSTEM_PROMPT)
     except RuntimeError:
@@ -358,7 +358,7 @@ def api_chat(request):
             f"{i+1}. {r['product']}\n   售價：${r['price']:,} | 跑分：{r['score']:,} | CP 值：{r['CP']:.4f}"
             for i, r in enumerate(recommendations)
         ]
-        assistant_message = "（Ollama 服務暫時無法連線）\n\n查詢結果如下：\n" + "\n".join(lines)
+        assistant_message = "（LLM 服務暫時無法連線）\n\n查詢結果如下：\n" + "\n".join(lines)
 
     return JsonResponse({
         "assistant_message": assistant_message,
