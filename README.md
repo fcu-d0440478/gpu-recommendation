@@ -1,4 +1,7 @@
-﻿# GPU Recommendation Assistant
+# GPU Recommendation Assistant
+
+> **Live Demo:** [https://gpu-recommendation.onrender.com/](https://gpu-recommendation.onrender.com/)  
+> (本網站已部署於 Render，歡迎即時測試 / This site is deployed on Render for live testing)
 
 > 輸入預算或目標顯卡型號，系統會用最新 CoolPC 價格與 UL Benchmark 跑分，推薦同價位 CP 值最高的顯卡。
 
