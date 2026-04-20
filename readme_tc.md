@@ -1,9 +1,9 @@
 # GPU Recommendation Assistant
 
 > **Live Demo:** [https://gpu-recommendation.onrender.com/](https://gpu-recommendation.onrender.com/)  
-> This site is deployed on Render for live testing.
+> (本網站已部署於 Render，歡迎即時測試 / This site is deployed on Render for live testing)
 
-> Enter a budget or a target GPU model, and the system will recommend the highest value GPUs using the latest CoolPC prices and UL Benchmark scores.
+> 輸入預算或目標顯卡型號，系統會用最新 CoolPC 價格與 UL Benchmark 跑分，推薦同價位 CP 值最高的顯卡。
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue?logo=python)
 ![Django](https://img.shields.io/badge/Django-6.0-green?logo=django)
@@ -14,17 +14,17 @@
 
 ## Features
 
-- Budget-based recommendations: find the top 3 GPUs with the best CP score within a given budget
-- Target GPU comparison: compare a selected GPU against alternatives in the same price range
-- One-click database update: run ETL to fetch the latest prices and benchmark data
-- Automatic GPU name mapping: use an LLM to map CoolPC chipsets to standardized UL GPU names
+- 預算推薦：依預算找出 CP 值最高的 Top 3 顯卡
+- 目標顯卡比較：顯示目標卡與同價位替代方案
+- 一鍵更新資料庫：ETL 抓取最新價格與跑分
+- 自動 GPU 名稱對照：LLM 將 CoolPC chipset 對應到 UL 標準名稱
 
 ---
 
 ## Tech Stack
 
 - Backend: Django 6
-- LLM: Groq API (`llama-3.1-8b-instant`, configurable via environment variables)
+- LLM: Groq API (`llama-3.1-8b-instant`，可在 env 覆蓋)
 - ETL Crawler: `requests + BeautifulSoup4`
 - Data processing: Pandas
 - Database: SQLite (`db.sqlite3`, `filtered_df.db`)
@@ -70,24 +70,24 @@ Open: `http://127.0.0.1:8000`
 
 ## ETL Flow
 
-`chat/etl.py` performs the following:
+`chat/etl.py` 會執行：
 
-1. Fetch GPU product listings from CoolPC using `requests + BeautifulSoup`
-2. Fetch GPU benchmark scores from UL Benchmark using `requests + BeautifulSoup`
-3. Use Groq to map unknown CoolPC chipsets to UL-standard GPU names
-4. Clean the data and calculate `CP = score / price`
-5. Write the processed results into `filtered_df.db`
+1. 從 CoolPC 抓顯示卡品項（`requests + BeautifulSoup`）
+2. 從 UL Benchmark 抓 GPU 分數（`requests + BeautifulSoup`）
+3. 用 Groq 進行未知 chipset mapping
+4. 清洗資料並計算 `CP = score / price`
+5. 寫入 `filtered_df.db`
 
-> By default, ETL runs at most once per day. Use `force=True` to override this behavior.
+> 同一天預設只更新一次；可用 `force=True` 強制更新。
 
 ---
 
 ## API Endpoints
 
-- `GET /`: chat interface
-- `POST /api/chat`: submit a message and receive recommendations
-- `POST /api/update-db`: trigger an ETL update
-- `GET /api/db-meta`: retrieve the latest database date and row count
+- `GET /`：聊天頁
+- `POST /api/chat`：送訊息取得推薦
+- `POST /api/update-db`：觸發 ETL 更新
+- `GET /api/db-meta`：查資料庫最新日期與筆數
 
 ---
 
@@ -117,9 +117,9 @@ GROQ_MODEL=llama-3.1-8b-instant
 
 ### Important notes
 
-- Do not include `https://` in `DJANGO_ALLOWED_HOSTS`
-- Do include `https://` in `DJANGO_CSRF_ORIGINS`
-- The project currently uses SQLite, so local file-based data may be lost on Render if persistent storage is not configured
+- `DJANGO_ALLOWED_HOSTS` 不要加 `https://`
+- `DJANGO_CSRF_ORIGINS` 要加 `https://`
+- 目前是 SQLite，本地檔案型資料庫在 Render 無持久磁碟時會隨重建遺失
 
 ---
 
